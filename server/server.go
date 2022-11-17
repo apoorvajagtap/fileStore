@@ -1,37 +1,106 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"log"
+	"mime/multipart"
 	"net/http"
 	"os"
+	"time"
+
+	"github.com/apoorvajagtap/fileStore/dbase"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/gridfs"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-const parentDir = "./uploads"
+type File struct {
+	Id         primitive.ObjectID `json:"id" bson:"_id"`
+	FileSize   int64              `json:"filesize" bson:"length"`
+	ChunkSize  int64              `json:"chunksize" bson:"chunkSize"`
+	UploadDate time.Time          `json:"uploaddate" bson:"uploadDate"`
+	Name       string             `json:"name" bson:"filename"`
+}
 
-func uploadHandler(w http.ResponseWriter, r *http.Request) {
+type Chunk struct {
+	ChunkId  primitive.ObjectID `json:"cid" bson:"_id"`
+	FileId   primitive.ObjectID `json:"fid" bson:"files_id"`
+	Sequence int                `json:"seq" bson:"n"`
+	Content  bson.RawValue      `json:"content" bson:"data"`
+}
+
+var fileCollection *mongo.Collection = dbase.GetCollection(dbase.DB, "fileStore_collection", "fileStore_db")
+
+func fileExists(fileHeader *multipart.FileHeader) bool {
+
+	var results bson.M
+
+	fsFiles := fileCollection.Database().Collection("fs.files")
+	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+
+	_ = fsFiles.FindOne(ctx, bson.D{{Key: "filename", Value: fileHeader.Filename}}).Decode(&results)
+	return results != nil
+}
+
+func returnFileList() []File {
+	var results []File
+	findOptions := options.Find()
+
+	fsFiles := fileCollection.Database().Collection("fs.files")
+	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+
+	cursor, err := fsFiles.Find(ctx, bson.D{{}}, findOptions)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for cursor.Next(ctx) {
+		var res File
+		err := cursor.Decode(&res)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		results = append(results, res)
+	}
+
+	cursor.Close(context.TODO())
+	return results
+}
+
+func uploadFileHandler(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method != "POST" {
 		http.Error(w, "Method Not Allowed!", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// Handle multiple files
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
+	_, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	err := r.ParseMultipartForm(32 << 20)
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	files := r.MultipartForm.File["file"]
 
-	for _, fileHeader := range files {
+	// create bucket
+	bucket, err := gridfs.NewBucket(
+		fileCollection.Database(),
+	)
+	if err != nil {
+		log.Fatal(err)
+		os.Exit(1)
+	}
 
-		if _, err := os.Stat(fmt.Sprintf("%s/%s", parentDir, fileHeader.Filename)); err == nil {
-			http.Error(w, fmt.Sprintf(">>> The file '%s/%s' already exists!\n", parentDir, fileHeader.Filename), http.StatusInternalServerError)
-			log.Printf("The file '%s/%s' already exists!\n", parentDir, fileHeader.Filename)
-			continue
-		}
+	for _, fileHeader := range files {
 
 		file, err := fileHeader.Open()
 		if err != nil {
@@ -40,90 +109,146 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		defer file.Close()
 
-		err = os.MkdirAll(parentDir, os.ModePerm)
-		if err != nil {
+		// check if file with same name already exists
+		if fileExists(fileHeader) {
+			http.Error(w, fmt.Sprintf(">>> The file '%s' already exists!\n", fileHeader.Filename), http.StatusInternalServerError)
+			log.Printf("The file '%s' already exists!\n", fileHeader.Filename)
+			continue
+		}
+
+		// saving the file data in buffer
+		buff := bytes.NewBuffer(nil)
+		if _, err := io.Copy(buff, file); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
 		}
 
-		f, err := os.Create(fmt.Sprintf("%s/%s", parentDir, fileHeader.Filename))
+		uploadStream, err := bucket.OpenUploadStream(
+			fileHeader.Filename,
+		)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
+			fmt.Println(err)
+			os.Exit(1)
 		}
+		defer uploadStream.Close()
 
-		defer f.Close()
-
-		_, err = io.Copy(f, file)
+		fileSize, err := uploadStream.Write([]byte(buff.String()))
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
+			log.Fatal(err)
+			os.Exit(1)
 		}
-		fmt.Fprintf(w, fmt.Sprintf(">>> File %s uploaded successfully", fileHeader.Filename))
+		log.Printf("Write file to DB was successful. File size: %d\n", fileSize)
+		fmt.Fprintf(w, ">>> File %s uploaded successfully", uploadStream.FileID)
 	}
-
 }
 
-func getHandler(w http.ResponseWriter, r *http.Request) {
-
+// list all the fileNames
+func listFilesHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
 		http.Error(w, "Method Not Allowed!", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// if we want the list as sorted, shall opt for ioutil.ReadDir
-	dir, err := os.Open(parentDir)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer dir.Close()
-	files, err := dir.ReadDir(-1)
-	if err != nil {
-		log.Fatal(err)
-	}
-	for _, f := range files {
-		w.Write([]byte(fmt.Sprintf("%s\n", f.Name())))
-		fmt.Println(f.Name())
+	fileList := returnFileList()
+
+	for _, f := range fileList {
+		w.Write([]byte(fmt.Sprintf("%s\n", f.Name)))
+		fmt.Println(f)
 	}
 }
 
-// func removeHandler(w http.ResponseWriter, r *http.Request) {
+// Deletes single file at a time.
+func deleteFileHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "DELETE" {
+		http.Error(w, "Method Not Allowed!", http.StatusMethodNotAllowed)
+		return
+	}
 
-// 	if r.Method != "DELETE" {
-// 		http.Error(w, "Method Not Allowed!", http.StatusMethodNotAllowed)
-// 		return
-// 	}
+	// find the ID of the file with given name
+	var fileResult File
 
-// }
+	fsFiles := fileCollection.Database().Collection("fs.files")
+	fsChunks := fileCollection.Database().Collection("fs.chunks")
+	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
 
-// func modifyHandler(w http.ResponseWriter, r *http.Request) {
-// 	if r.Method != "PUT" {
-// 		http.Error(w, "Method Not Allowed!", http.StatusMethodNotAllowed)
-// 		return
-// 	}
+	err := fsFiles.FindOne(ctx, bson.D{{Key: "filename", Value: r.Header["Name"][0]}}).Decode(&fileResult)
+	if err != nil {
+		log.Panic(err)
+	}
 
-// 	file, fileHeader, err := r.FormFile("file")
-// 	if err != nil {
-// 		http.Error(w, err.Error(), http.StatusBadRequest)
-// 		return
-// 	}
+	// deleting from fs.chunks (content)
+	_, err = fsChunks.DeleteOne(ctx, bson.D{{Key: "files_id", Value: fileResult.Id}}, nil)
+	if err != nil {
+		log.Panic(err)
+		return
+	}
 
-// 	defer file.Close()
+	// deleting from fs.files (metadata)
+	_, err = fsFiles.DeleteOne(ctx, bson.D{{Key: "_id", Value: fileResult.Id}}, nil)
+	if err != nil {
+		log.Panic(err)
+		return
+	}
 
-// 	if f, err := os.Stat(fmt.Sprintf("%s/%s", parentDir, fileHeader.Filename)); err != nil {
-// 		fmt.Println(f)
-// 	}
-// }
+	w.Write([]byte(fmt.Sprintf("'%s' has been deleted successfully! ", fileResult.Name)))
+	log.Printf("File '%s' with id: '%s' has been deleted successfully! \n", fileResult.Name, fileResult.Id)
+}
+
+func modifyFileHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "PUT" {
+		http.Error(w, "Method Not Allowed!", http.StatusMethodNotAllowed)
+		return
+	}
+
+	file, fileHeader, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	defer file.Close()
+
+	// saving the file data in buffer
+	buff := bytes.NewBuffer(nil)
+	if _, err := io.Copy(buff, file); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+
+	var fileResult File
+
+	fsFiles := fileCollection.Database().Collection("fs.files")
+	fsChunks := fileCollection.Database().Collection("fs.chunks")
+
+	err = fsFiles.FindOne(context.TODO(), bson.D{{Key: "filename", Value: fileHeader.Filename}}).Decode(&fileResult)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	filter := bson.D{{Key: "files_id", Value: fileResult.Id}}
+	update := bson.D{{Key: "$set", Value: bson.D{{Key: "content", Value: buff.String()}}}}
+
+	opts := options.Update().SetUpsert(true)
+
+	result, err := fsChunks.UpdateOne(context.TODO(), filter, update, opts)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	if result.ModifiedCount == 0 {
+		w.Write([]byte("No changes in the content observed!"))
+	} else {
+		w.Write([]byte(fmt.Sprintf("Modified the content of %s", fileHeader.Filename)))
+	}
+	fmt.Printf("Number of documents updated: %v\n", result.ModifiedCount)
+	fmt.Printf("Number of documents upserted: %v\n", result.UpsertedCount)
+}
 
 func main() {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/upload", uploadHandler)
-	mux.HandleFunc("/get", getHandler)
-
-	// TODO: Configurting a DB to keep track of the files, so that we can perform delete and update efficiently.
-	// mux.HandleFunc("/delete", removeHandler)
-	// mux.HandleFunc("/update", modifyHandler)
+	mux.HandleFunc("/upload", uploadFileHandler)
+	mux.HandleFunc("/get", listFilesHandler)
+	mux.HandleFunc("/delete", deleteFileHandler)
+	mux.HandleFunc("/update", modifyFileHandler)
 
 	if err := http.ListenAndServe(":4500", mux); err != nil {
 		log.Fatal(err)

@@ -1,5 +1,9 @@
 << Work In Progress.>>
-To check the add and ls functionalities for now, following steps could help.
+Pre-requisite: MongoDB container running on port 27017
+Following steps could be followed to test the CRUD functionality.
+
+$ docker run -d -p 27017:27017 --name test-mongo mongo:4.0.4
+$ docker ps
 
 $ git clone <repository>
 $ go build -o ./store client/client.go
