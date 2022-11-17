@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/apoorvajagtap/fileStore/dbase"
@@ -17,6 +18,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/gridfs"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/x/bsonx"
 )
 
 type File struct {
@@ -25,6 +27,7 @@ type File struct {
 	ChunkSize  int64              `json:"chunksize" bson:"chunkSize"`
 	UploadDate time.Time          `json:"uploaddate" bson:"uploadDate"`
 	Name       string             `json:"name" bson:"filename"`
+	WordCount  bsonx.Doc          `json:"wc" bson:"metadata"`
 }
 
 type Chunk struct {
@@ -75,7 +78,7 @@ func returnFileList() []File {
 
 func uploadFileHandler(w http.ResponseWriter, r *http.Request) {
 
-	if r.Method != "POST" {
+	if r.Method != "POST" && r.Method != "PUT" {
 		http.Error(w, "Method Not Allowed!", http.StatusMethodNotAllowed)
 		return
 	}
@@ -122,9 +125,11 @@ func uploadFileHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 
-		uploadStream, err := bucket.OpenUploadStream(
-			fileHeader.Filename,
-		)
+		fmt.Println(len(strings.Fields(buff.String())))
+
+		// Add wordcount of respective file in `metadata` tag of Struct
+		uploadOpts := options.GridFSUpload().SetMetadata(bsonx.Doc{{Key: "wc", Value: bsonx.Int64(int64(len(strings.Fields(buff.String()))))}})
+		uploadStream, err := bucket.OpenUploadStream(fileHeader.Filename, uploadOpts)
 		if err != nil {
 			fmt.Println(err)
 			os.Exit(1)
@@ -207,6 +212,15 @@ func modifyFileHandler(w http.ResponseWriter, r *http.Request) {
 
 	defer file.Close()
 
+	// check if file exists
+	if fileExists(fileHeader) {
+		fmt.Println("file exists")
+	} else {
+		fmt.Println("file does not exist")
+		uploadFileHandler(w, r)
+		return
+	}
+
 	// saving the file data in buffer
 	buff := bytes.NewBuffer(nil)
 	if _, err := io.Copy(buff, file); err != nil {
@@ -242,6 +256,22 @@ func modifyFileHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("Number of documents upserted: %v\n", result.UpsertedCount)
 }
 
+func totalWordCountHandler(w http.ResponseWriter, r *http.Request) {
+	fileList := returnFileList()
+	var totalWords int64
+
+	for _, f := range fileList {
+		totalWords += f.WordCount.Lookup("wc").Int64()
+	}
+
+	w.Write([]byte(fmt.Sprintf("Words count of all files included: %v", totalWords)))
+	fmt.Println("Total words in all the fils on collection", totalWords)
+}
+
+func wordFrequencyHandler(w http.ResponseWriter, r *http.Request) {
+
+}
+
 func main() {
 	mux := http.NewServeMux()
 
@@ -249,6 +279,8 @@ func main() {
 	mux.HandleFunc("/get", listFilesHandler)
 	mux.HandleFunc("/delete", deleteFileHandler)
 	mux.HandleFunc("/update", modifyFileHandler)
+	mux.HandleFunc("/get/wc", totalWordCountHandler)
+	mux.HandleFunc("/get/freqwords", wordFrequencyHandler)
 
 	if err := http.ListenAndServe(":4500", mux); err != nil {
 		log.Fatal(err)
