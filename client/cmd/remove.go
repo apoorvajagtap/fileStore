@@ -13,37 +13,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// func fileDeleteRequest(uri, fileName string) {
-// 	// Create client
-// 	client := &http.Client{}
-// 	// create request
-// 	req, err := http.NewRequest("DELETE", uri, nil)
-// 	if err != nil {
-// 		fmt.Println(err)
-// 		return
-// 	}
-
-// 	// Fetch Request
-// 	resp, err := client.Do(req)
-// 	if err != nil {
-// 		fmt.Println(err)
-// 		return
-// 	}
-// 	defer resp.Body.Close()
-
-// 	// Read Response Body
-// 	respBody, err := ioutil.ReadAll(resp.Body)
-// 	if err != nil {
-// 		fmt.Println(err)
-// 		return
-// 	}
-
-// 	// Display Results
-// 	fmt.Println("response Status : ", resp.Status)
-// 	fmt.Println("response Headers : ", resp.Header)
-// 	fmt.Println("response Body : ", string(respBody))
-// }
-
 // removeCmd represents the remove command
 var removeCmd = &cobra.Command{
 	Use:   "rm",
@@ -61,7 +30,8 @@ var removeCmd = &cobra.Command{
 
 		client := &http.Client{}
 		// create request
-		req, err := http.NewRequest("DELETE", "http://localhost:4500/delete", nil)
+		// req, err := http.NewRequest("DELETE", "http://localhost:4500/delete", nil)
+		req, err := http.NewRequest("DELETE", fmt.Sprintf("http://%v/delete", url), nil)
 		req.Header.Set("name", args[0])
 		if err != nil {
 			fmt.Println(err)

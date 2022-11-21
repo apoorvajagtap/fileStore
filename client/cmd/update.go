@@ -28,7 +28,8 @@ var updateCmd = &cobra.Command{
 			log.Fatal("Pass a valid file name.")
 		}
 
-		request := FileUploadRequest("http://localhost:4500/update", "file", "PUT", args)
+		// request := FileUploadRequest("http://localhost:4500/update", "file", "PUT", args)
+		request := FileUploadRequest(fmt.Sprintf("http://%v/update", url), "file", "PUT", args)
 
 		client := &http.Client{}
 

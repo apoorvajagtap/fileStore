@@ -10,6 +10,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var url string
+
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "store",
@@ -40,6 +42,8 @@ func init() {
 	// will be global for your application.
 
 	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.example.com.yaml)")
+	// var url string
+	rootCmd.PersistentFlags().StringVarP(&url, "url", "u", "localhost:4500", "HTTP Server's url")
 
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.

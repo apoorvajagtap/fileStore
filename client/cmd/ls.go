@@ -25,7 +25,8 @@ var lsCmd = &cobra.Command{
 	// to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
 
-		resp, err := http.Get("http://localhost:4500/get")
+		// resp, err := http.Get("http://localhost:4500/get")
+		resp, err := http.Get(fmt.Sprintf("http://%v/get", url))
 		if err != nil {
 			log.Fatal(err)
 		}

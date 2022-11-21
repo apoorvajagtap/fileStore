@@ -125,10 +125,10 @@ func uploadFileHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 
-		fmt.Println(len(strings.Fields(buff.String())))
-
 		// Add wordcount of respective file in `metadata` tag of Struct
-		uploadOpts := options.GridFSUpload().SetMetadata(bsonx.Doc{{Key: "wc", Value: bsonx.Int64(int64(len(strings.Fields(buff.String()))))}})
+		uploadOpts := options.GridFSUpload().SetMetadata(bsonx.Doc{
+			{Key: "wc", Value: bsonx.Int64(int64(len(strings.Fields(buff.String()))))},
+		})
 		uploadStream, err := bucket.OpenUploadStream(fileHeader.Filename, uploadOpts)
 		if err != nil {
 			fmt.Println(err)
@@ -264,13 +264,13 @@ func totalWordCountHandler(w http.ResponseWriter, r *http.Request) {
 		totalWords += f.WordCount.Lookup("wc").Int64()
 	}
 
-	w.Write([]byte(fmt.Sprintf("Words count of all files included: %v", totalWords)))
+	w.Write([]byte(fmt.Sprintf("Word count of all files included: %v", totalWords)))
 	fmt.Println("Total words in all the fils on collection", totalWords)
 }
 
-func wordFrequencyHandler(w http.ResponseWriter, r *http.Request) {
+// func wordFrequencyHandler(w http.ResponseWriter, r *http.Request) {
 
-}
+// }
 
 func main() {
 	mux := http.NewServeMux()
@@ -280,7 +280,7 @@ func main() {
 	mux.HandleFunc("/delete", deleteFileHandler)
 	mux.HandleFunc("/update", modifyFileHandler)
 	mux.HandleFunc("/get/wc", totalWordCountHandler)
-	mux.HandleFunc("/get/freqwords", wordFrequencyHandler)
+	// mux.HandleFunc("/get/freqwords", wordFrequencyHandler)
 
 	if err := http.ListenAndServe(":4500", mux); err != nil {
 		log.Fatal(err)
