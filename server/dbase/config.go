@@ -10,7 +10,8 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-const mongoURI = "mongodb://localhost:27017"
+// const mongoURI = "mongodb://localhost:27017"
+const mongoURI = "mongodb://mongo:27017"
 
 // connect to the DB
 func ConnectDB() *mongo.Client {
