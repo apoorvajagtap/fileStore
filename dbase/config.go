@@ -11,6 +11,7 @@ import (
 )
 
 // const mongoURI = "mongodb://localhost:27017"
+
 const mongoURI = "mongodb://mongo:27017"
 
 // connect to the DB

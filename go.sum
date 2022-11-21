@@ -1,3 +1,5 @@
+github.com/apoorvajagtap/fileStore/server v0.0.0-20221121101615-f65634f7e85e h1:7d++HsSWF0D9uouZI7g0p5+HO/O7SQ+FBhGwevh3j08=
+github.com/apoorvajagtap/fileStore/server v0.0.0-20221121101615-f65634f7e85e/go.mod h1:Y62qt/AG1EHO1p3Limo8r4kSei+5FHvOJCPywbhe4qs=
 github.com/cpuguy83/go-md2man/v2 v2.0.2/go.mod h1:tgQtvFlXSQOSOSIRvRPT7W67SCa46tRHOmNcaadrF8o=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=

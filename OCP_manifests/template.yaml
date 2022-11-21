@@ -115,7 +115,7 @@ spec:
     spec:
       containers:
       - name: filestore
-        image: quay.io/rhn_support_apjagtap/filestore:v2
+        image: quay.io/rhn_support_apjagtap/filestore:v4.2
         env:
         - name: MONGOSVC
           value: "mongo"
