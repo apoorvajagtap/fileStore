@@ -10,30 +10,26 @@ Following tasks have been achieved:
 - Update the specified file, or create new if it does not exist.
 - Count the total words in all the files stored on the server. 
 
-## Steps to Run Locally.
+## Steps to Run Locally using OpenShift cluster.
 
 *Pre-requisite*  
-- You have a mongodb container running on port '27017' locally.
-```
-$ docker run -d -p 27017:27017 --name fileStore-mongo mongo:4.0.4
-$ docker ps
-```
+- You have a functional OpenShift cluster
 
 *Start the server*
-- Clone the repository locally
+- Use OCP_manifests/template.yaml to create the required objects in the cluster.
 ```
-$ git clone git@github.com:apoorvajagtap/fileStore.git
-$ cd fileStore
-$ go run server/server.go           
+$ oc create -f <OCP_manifests/template.yaml>
+$ oc get pods
+// must be running mongodb (2 replicas) & 1 filestore pod
 ```
 
-- On another terminal, build the CLI and test the following:
+- On local machine, clone the repo & build the CLI and test the following (copy the route-hostname of filestore server on OpenShift):
 ```
 $ go build -o ./store client/client.go
-$ ./store add <file_names>
-$ ./store ls
-$ ./store rm <file_name>
-$ ./store wc
-$ ./store update <file_name>
+$ ./store --url=<route_hostname> add <file_names>
+$ ./store --url=<route_hostname> ls
+$ ./store --url=<route_hostname> rm <file_name>
+$ ./store --url=<route_hostname> wc
+$ ./store --url=<route_hostname> update <file_name>
 ...
 ```

@@ -1,0 +1,151 @@
+allowHostDirVolumePlugin: true
+allowHostIPC: true
+allowHostNetwork: true
+allowHostPID: true
+allowHostPorts: true
+allowPrivilegeEscalation: true
+allowPrivilegedContainer: true
+allowedCapabilities:
+- '*'
+allowedUnsafeSysctls:
+- '*'
+apiVersion: security.openshift.io/v1
+defaultAddCapabilities: null
+fsGroup:
+  type: RunAsAny
+groups:
+- system:cluster-admins
+- system:nodes
+- system:masters
+kind: SecurityContextConstraints
+metadata:
+  annotations:
+    include.release.openshift.io/ibm-cloud-managed: "true"
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+    kubernetes.io/description: 'privileged allows access to all privileged and host
+      features and the ability to run as any user, any group, any fsGroup, and with
+      any SELinux context.  WARNING: this is the most relaxed SCC and should be used
+      only for cluster administration. Grant with caution.'
+    release.openshift.io/create-only: "true"
+  name: custom-privileged
+priority: 10
+readOnlyRootFilesystem: false
+requiredDropCapabilities: null
+runAsUser:
+  type: RunAsAny
+seLinuxContext:
+  type: RunAsAny
+seccompProfiles:
+- '*'
+supplementalGroups:
+  type: RunAsAny
+users:
+- system:admin
+- system:serviceaccount:openshift-infra:build-controller
+- system:serviceaccount:filestore-server:mongodb
+volumes:
+- '*'
+---
+apiVersion: project.openshift.io/v1
+kind: Project
+metadata:
+  annotations:
+    openshift.io/description: "Namespace to host filestore server"
+    openshift.io/display-name: ""
+  labels:
+    kubernetes.io/metadata.name: filestore-server
+  name: filestore-server
+spec: {}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mongodb
+  namespace: filestore-server
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo
+  namespace: filestore-server
+  labels:
+    app: mongodb
+spec:
+  ports:
+  - port: 27017
+  selector:
+    app: mongodb
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongodb
+  namespace: filestore-server
+spec:
+  serviceName: "mongo"
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mongodb
+  template:
+    metadata:
+      labels:
+        app: mongodb
+    spec:
+      serviceAccount: mongodb
+      serviceAccountName: mongodb
+      containers:
+      - name: mongodb
+        image: quay.io/rhn_support_apjagtap/mongodb:4.0.4
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: filestore
+  namespace: filestore-server
+spec:
+  selector:
+    matchLabels:
+      app: filestore
+  template:
+    metadata:
+      labels:
+        app: filestore
+    spec:
+      containers:
+      - name: filestore
+        image: quay.io/rhn_support_apjagtap/filestore:v2
+        env:
+        - name: MONGOSVC
+          value: "mongo"
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: filestore
+  namespace: filestore-server
+spec:
+  ports:
+  - port: 4500
+    protocol: TCP
+    targetPort: 4500
+  selector:
+    app: filestore
+  sessionAffinity: None
+  type: ClusterIP
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: filestore-server
+  namespace: filestore-server
+spec:
+  port:
+    targetPort: 4500
+  to:
+    kind: Service
+    name: filestore
+    weight: 100
+  wildcardPolicy: None
